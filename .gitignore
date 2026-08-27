@@ -1,0 +1,22 @@
+# --- Secrets (NEVER commit these) ---
+.env
+LEARN.md
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Database (local data, not code) ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- OS / editor junk ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
