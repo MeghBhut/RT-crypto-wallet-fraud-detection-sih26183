@@ -51,11 +51,13 @@ def get_outgoing(conn, wallet, fetched):
         fetched.add(wallet)
         try:
             raw = fetch_raw(wallet)
+            cleaned = [c for tx in raw if (c := clean_transaction(tx, wallet)) is not None]
+            save_transactions(conn, cleaned)
         except Exception:
-            return []   # offline / rate-limited: fall back to whatever is cached
-        cleaned = [c for tx in raw if (c := clean_transaction(tx, wallet)) is not None]
-        save_transactions(conn, cleaned)
+            pass   # offline / rate-limited / unknown address: fall back to cache below
 
+    # ALWAYS read from cache, even if the live fetch failed — this is what makes
+    # offline mode and seeded demo wallets work.
     return conn.execute("""
         SELECT to_address, amount, token, timestamp_ms
         FROM transactions

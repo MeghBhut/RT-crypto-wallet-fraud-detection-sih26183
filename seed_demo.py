@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 
 from cache_to_db import init_db, save_transactions
 
-DEMO = "TDemoFraudHub1111111111111111111111"   # 34 chars, starts with T
+DEMO = "TDemoFraudHub" + "1" * 21   # exactly 34 chars, starts with T (API requires len==34)
+assert len(DEMO) == 34, f"demo address must be 34 chars, got {len(DEMO)}"
 BASE_MS = 1787000000000                        # arbitrary fixed start time
 B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -77,6 +78,9 @@ def build_rows():
 
 def main():
     conn = init_db()
+    # clear any previous demo rows so re-seeding is always a clean slate
+    conn.execute("DELETE FROM transactions WHERE txid LIKE 'demo-%'")
+    conn.commit()
     rows = build_rows()
     added = save_transactions(conn, rows)
     total = conn.execute(

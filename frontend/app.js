@@ -55,9 +55,28 @@ form.addEventListener("submit", async (e) => {
 // ---------------------------------------------------------------------------
 // VERDICT CARD
 // ---------------------------------------------------------------------------
+// blend cyan -> amber -> red from the LIVE theme tokens, driven by threat (0..1)
+function hexToRgb(h) {
+  h = h.replace("#", "").trim();
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function mix(a, b, t) { return a.map((v, i) => Math.round(v + (b[i] - v) * t)); }
+function threatColor(t, el) {
+  const cs = getComputedStyle(el);
+  const cyan = hexToRgb(cs.getPropertyValue("--cyan") || "#0A8FA5");
+  const warn = hexToRgb(cs.getPropertyValue("--warn") || "#C9821C");
+  const danger = hexToRgb(cs.getPropertyValue("--danger") || "#C43D2E");
+  const rgb = t <= 0.5 ? mix(cyan, warn, t / 0.5) : mix(warn, danger, (t - 0.5) / 0.5);
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
 function renderVerdict(d) {
-  // drive ONLY the verdict card's cyan->red theme from this wallet's threat
-  $("verdictCard").style.setProperty("--threat", d.threat);
+  // drive ONLY the verdict card's cyan->red shift from this wallet's threat
+  const card = $("verdictCard");
+  card.style.setProperty("--threat", d.threat);                    // for reference/debug
+  card.style.setProperty("--threat-color", threatColor(d.threat, card));
 
   $("levelPill").textContent = d.risk_level;
   $("confBadge").textContent = `confidence: ${d.confidence.toLowerCase()}`;
@@ -96,6 +115,8 @@ function countUp(el, target) {
     if (t < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
+  // fallback: guarantee the final value even if rAF was paused (tab backgrounded)
+  setTimeout(() => { el.textContent = target; }, dur + 80);
 }
 
 // ---------------------------------------------------------------------------
