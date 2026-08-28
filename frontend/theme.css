@@ -1,0 +1,95 @@
+/* =========================================================================
+   theme.css — Cyanotype design tokens + RISK extension
+   Every color downstream references a var(--token). No raw hex in app.css.
+   ========================================================================= */
+
+:root {
+  /* surfaces */
+  --bg: #D7E0E2;  --surface: #E6EDEE;  --surface-2: #F3F7F8;  --line: #B2C3C6;
+  /* text */
+  --ink: #16262B;  --ink-dim: #55696D;
+  /* cyan — primary / actions */
+  --cyan: #0A8FA5;  --cyan-glow: #0FA6BE;  --cyan-tint: #DFEEF1;
+  /* gold — secondary */
+  --sun: #B47A18;  --sun-soft: #E9C35E;
+
+  /* --- RISK extension (added for TronTrace) --- */
+  --danger: #C43D2E;   /* red, tuned to sit beside cyan/gold */
+  --warn:   #C9821C;   /* amber midpoint */
+  --threat: 0;         /* LIVE 0–1 from the API; JS sets this on :root */
+  /* discrete risk-level colors (graph nodes, map dots) */
+  --risk-low: var(--cyan);  --risk-med: var(--warn);  --risk-high: var(--danger);
+
+  /* shape / shadow */
+  --radius-card: 10px;  --radius-control: 7px;  --radius-pill: 20px;
+  --shadow-card: 0 1px 2px rgba(22,38,43,.06), 0 4px 12px rgba(22,38,43,.05);
+  --focus-ring: 0 0 0 3px var(--cyan-tint);
+}
+
+[data-theme="dark"] {
+  --bg: #101E20;  --surface: #17282A;  --surface-2: #1E3033;  --line: #2C4145;
+  --ink: #D3E0E1;  --ink-dim: #7F9498;
+  --cyan: #35C6DC;  --cyan-glow: #4FD8EC;  --cyan-tint: #123034;
+  --sun: #E4B85E;  --sun-soft: #E4B85E;
+  --danger: #E5645A;  --warn: #E0A73C;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.25), 0 8px 20px rgba(0,0,0,.30);
+}
+
+/* Register --threat as a real animatable number. Without @property a CSS
+   custom property snaps instantly; registered, it can transition smoothly,
+   and any color-mix() that reads it follows along frame by frame. */
+@property --threat {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+/* --threat-color is defined ON the verdict card (app.css), so ONLY the card
+   shifts cyan->red — never the whole site. */
+
+/* base */
+html, body { background: var(--bg); color-scheme: light dark; }
+* { transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
+body { font-family: 'Hanken Grotesk', system-ui, sans-serif; font-weight: 400;
+       color: var(--ink); margin: 0; min-height: 100vh; }
+
+h1, h2, h3, .hero-title, .card-title, .wordmark {
+  font-family: 'Bricolage Grotesque', 'Hanken Grotesk', system-ui, sans-serif;
+  font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
+
+.eyebrow { font-family: 'Spline Sans Mono', ui-monospace, monospace;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--cyan); margin: 0 0 10px; }
+
+.mono, .addr, .stat-mono { font-family: 'Spline Sans Mono', ui-monospace, monospace; }
+button, input { font-family: 'Hanken Grotesk', system-ui, sans-serif; font-weight: 500; }
+
+.text-dim { color: var(--ink-dim); }
+
+/* primitives */
+.btn-primary { background: var(--cyan); color: var(--surface-2); border: none;
+  border-radius: var(--radius-control); font-weight: 500; padding: 12px 24px;
+  cursor: pointer; font-size: 15px; }
+.btn-primary:hover { background: var(--cyan-glow); }
+.btn-primary:disabled { opacity: .6; cursor: default; }
+.btn-primary:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.input { background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius-control); color: var(--ink); padding: 12px 14px;
+  font-size: 15px; }
+.input::placeholder { color: var(--ink-dim); }
+.input:focus { outline: none; border-color: var(--cyan); box-shadow: var(--focus-ring); }
+
+.card { background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+
+.wordmark { font-size: 20px; }
+.wordmark .accent { color: var(--cyan); }
+
+.theme-toggle { width: 38px; height: 38px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.theme-toggle:hover { border-color: var(--cyan); color: var(--cyan); }
+.theme-toggle svg { width: 18px; height: 18px; fill: currentColor; }
+.theme-toggle .icon-sun { display: none; }
+[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+[data-theme="dark"] .theme-toggle .icon-sun { display: inline; }

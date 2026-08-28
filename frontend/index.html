@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TronTrace — Wallet Fraud Detection</title>
+
+  <!-- Cyanotype: theme init (must run before first paint, no flash) -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('cyanotype-theme');
+        var theme = saved ? saved
+          : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (e) { /* private mode — fall back to light */ }
+    })();
+  </script>
+
+  <!-- Cyanotype: fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=Hanken+Grotesk:wght@400;500&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- ---------- Header ---------- -->
+  <header class="nav">
+    <span class="wordmark">Tron<span class="accent">Trace</span></span>
+    <button class="theme-toggle" data-theme-toggle aria-pressed="false" aria-label="Switch theme">
+      <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+
+  <main class="container">
+    <!-- ---------- Hero / search ---------- -->
+    <section class="hero">
+      <p class="eyebrow">Real-time crypto wallet forensics</p>
+      <h1 class="hero-title">Trace the money. Score the risk.</h1>
+      <p class="lede text-dim">Paste a TRON wallet address to analyze its transaction
+        patterns, follow the funds, and get a risk &amp; confidence verdict.</p>
+
+      <form class="search-row" id="searchForm">
+        <input class="input addr" id="addrInput" spellcheck="false"
+               placeholder="TNeorv8DUs4rX3oF4rCpcmBXJ95Pqm9umQ"
+               value="TNeorv8DUs4rX3oF4rCpcmBXJ95Pqm9umQ" />
+        <button class="btn-primary" id="analyzeBtn" type="submit">Analyze</button>
+      </form>
+      <p class="status" id="status"></p>
+    </section>
+
+    <!-- ---------- Results (hidden until first analysis) ---------- -->
+    <section class="results" id="results" hidden>
+      <div class="results-grid">
+        <!-- Verdict card -->
+        <article class="card verdict-card" id="verdictCard">
+          <p class="eyebrow" id="verdictEyebrow">Verdict</p>
+          <div class="score-block">
+            <div class="score-num" id="scoreNum">0</div>
+            <div class="score-of">/100</div>
+          </div>
+          <div class="badges">
+            <span class="pill" id="levelPill">—</span>
+            <span class="conf-badge" id="confBadge">confidence —</span>
+          </div>
+          <p class="addr addr-full text-dim" id="verdictAddr"></p>
+
+          <div class="stats" id="stats"></div>
+
+          <p class="eyebrow reasons-title">Why</p>
+          <ul class="reasons" id="reasons"></ul>
+        </article>
+
+        <!-- Trace graph -->
+        <article class="card graph-card">
+          <div class="card-head">
+            <p class="eyebrow">Forward trace</p>
+            <div class="legend">
+              <span class="lg"><i class="dot low"></i>low</span>
+              <span class="lg"><i class="dot med"></i>medium</span>
+              <span class="lg"><i class="dot high"></i>high</span>
+            </div>
+          </div>
+          <div class="graph-wrap">
+            <svg id="graph" viewBox="0 0 760 430" preserveAspectRatio="xMidYMid meet"></svg>
+            <p class="graph-empty text-dim" id="graphEmpty">No outgoing flow to trace.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ---------- Risk map ---------- -->
+    <section class="card map-card" id="mapCard" hidden>
+      <div class="card-head">
+        <p class="eyebrow">Risk map — every wallet analyzed</p>
+        <span class="text-dim map-hint">x: risk · y: confidence</span>
+      </div>
+      <div class="map" id="map"></div>
+    </section>
+  </main>
+
+  <footer class="foot text-dim">
+    <span class="mono">TronTrace</span> · rule-based, ML-ready · data cached locally
+  </footer>
+
+  <script src="theme.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
