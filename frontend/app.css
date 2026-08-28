@@ -106,6 +106,25 @@
 .gnode .seedtag { fill: var(--ink-dim); font-size: 9px; text-anchor: middle;
   font-family: 'Spline Sans Mono', monospace; }
 
+/* exchange / exit nodes in the graph: gold ring */
+.gnode.kind-exchange circle,
+.gnode.kind-likely_exchange circle { stroke: var(--sun); stroke-width: 3.5; }
+
+/* ---------- Destinations panel ---------- */
+.dests { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.dest { display: flex; gap: 10px; align-items: center; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-control);
+  background: var(--surface-2); }
+.dest.exch { border-color: var(--sun);
+  background: color-mix(in oklab, var(--sun) 12%, var(--surface-2)); }
+.dest-tag { flex-shrink: 0; font-family: 'Spline Sans Mono', monospace; font-size: 10px;
+  font-weight: 500; letter-spacing: .06em; padding: 3px 8px; border-radius: 6px;
+  background: var(--ink-dim); color: var(--surface-2); }
+.dest.exch .dest-tag { background: var(--sun); }
+.dest-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dest-addr { font-size: 12px; word-break: break-all; }
+.dest-note { font-size: 11px; }
+
 /* ---------- Risk map ---------- */
 .map-card { padding: 18px; margin-top: 18px; }
 .map-hint { font-family: 'Spline Sans Mono', monospace; font-size: 12px; }

@@ -4,7 +4,9 @@
    the animated trace graph, and the risk map.
    ========================================================================= */
 
-const API = "http://localhost:8000";   // where the FastAPI backend runs
+// Use 127.0.0.1, NOT localhost: on Windows 'localhost' can add a ~2s DNS delay
+// (it tries IPv6 ::1 first and times out). 127.0.0.1 is instant.
+const API = "http://127.0.0.1:8000";   // where the FastAPI backend runs
 
 // ---- element refs ----
 const $ = (id) => document.getElementById(id);
@@ -42,6 +44,7 @@ form.addEventListener("submit", async (e) => {
     }
     setStatus("");
     renderVerdict(data);
+    renderDestinations(data.destinations || []);
     renderGraph(data.graph);
     results.hidden = false;
     loadHistory();                    // refresh the risk map
@@ -120,6 +123,30 @@ function countUp(el, target) {
 }
 
 // ---------------------------------------------------------------------------
+// DESTINATIONS — where the traced money lands (exit / cash-out points)
+// ---------------------------------------------------------------------------
+function renderDestinations(dests) {
+  const box = $("dests");
+  if (!dests.length) {
+    box.innerHTML = `<span class="text-dim">No exit point identified in the traced hops.</span>`;
+    return;
+  }
+  box.innerHTML = dests.map((d) => {
+    const isExch = d.kind === "exchange" || d.kind === "likely_exchange";
+    const tag = d.kind === "exchange" ? "EXCHANGE"
+      : d.kind === "likely_exchange" ? "LIKELY EXCHANGE" : "WALLET";
+    const label = d.note ? d.note : "terminal wallet";
+    return `<div class="dest ${isExch ? "exch" : ""}">
+        <span class="dest-tag">${tag}</span>
+        <span class="dest-body">
+          <span class="mono dest-addr">${d.address}</span>
+          <span class="text-dim dest-note">${label} · received ~${abbr(d.received)} · hop ${d.hop}</span>
+        </span>
+      </div>`;
+  }).join("");
+}
+
+// ---------------------------------------------------------------------------
 // TRACE GRAPH (custom SVG, revealed hop-by-hop)
 // ---------------------------------------------------------------------------
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -187,14 +214,16 @@ async function renderGraph(graph) {
   const nodeGroups = {};
   nodes.forEach((n) => {
     const p = pos[n.id];
-    const g = el("g", { class: `gnode node-${n.risk_level}${n.is_seed ? " seed" : ""}` });
+    const isExch = n.kind === "exchange" || n.kind === "likely_exchange";
+    const g = el("g", { class: `gnode node-${n.risk_level} kind-${n.kind}${n.is_seed ? " seed" : ""}` });
     g.appendChild(el("circle", { cx: p.x, cy: p.y, r: radius(n) }));
     const lbl = el("text", { class: "lbl", x: p.x, y: p.y + radius(n) + 14 });
     lbl.textContent = n.label;
     g.appendChild(lbl);
-    if (n.is_seed) {
+    const tagText = n.is_seed ? "SEED" : isExch ? "EXIT" : null;
+    if (tagText) {
       const tag = el("text", { class: "seedtag", x: p.x, y: p.y - radius(n) - 6 });
-      tag.textContent = "SEED";
+      tag.textContent = tagText;
       g.appendChild(tag);
     }
     svg.appendChild(g);

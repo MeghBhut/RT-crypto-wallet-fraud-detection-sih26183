@@ -1,96 +1,90 @@
 """
-seed_demo.py  —  inject ONE crafted high-risk wallet into tron_cache.db so the
-demo has a dramatic RED, animated result (and so you can SEE the theme shift).
+seed_demo.py  —  inject a crafted high-risk wallet AND a laundering chain that
+ends at a known exchange, so the demo tells a complete story:
 
-Real fraud wallets that stack many signals are rare in a small cache, so for a
-reliable demo we synthesize one that trips every rule:
-  * HUB        — 25 distinct senders pay into it
-  * RAPID-FIRE — those 25 arrive inside ~50 minutes (bot-like burst)
-  * LAYERING   — a ~1.2M inflow leaves again (~1.15M) within 24h
-  * WHALE      — total moved is well over 1,000,000 units
-=> risk ~100, confidence HIGH, threat ~1.0  (full red)
+    25 senders ->  [SEED]  ->  mule1  ->  mule2  ->  [EXCHANGE]  (cash-out)
+                (hub+rapid              (layering chain the tracer follows)
+                 +whale+layering)
 
-This is HONEST for a demo as long as you TELL judges it's a synthetic test case:
-"we seed a known-bad wallet to demonstrate a full-signal detection."
+Analyzing the seed shows: HIGH risk, RED card, a multi-hop graph, and a named
+DESTINATION ("funds trace to Demo Exchange").
 
-Run it with:
-    python seed_demo.py
-Then analyze this address in the app:
-    TDemoFraudHub1111111111111111111111
+Be honest with judges: this is a synthetic test case that stacks every signal to
+demonstrate full-signal detection and end-to-end attribution.
+
+Run:  python seed_demo.py
+Then analyze:  TDemoFraudHub111111111111111111111
 """
 
-import json
 import random
 from datetime import datetime, timezone
 
 from cache_to_db import init_db, save_transactions
+from fraud_engine import DEMO_EXCHANGE          # the labeled cash-out address
 
-DEMO = "TDemoFraudHub" + "1" * 21   # exactly 34 chars, starts with T (API requires len==34)
-assert len(DEMO) == 34, f"demo address must be 34 chars, got {len(DEMO)}"
-BASE_MS = 1787000000000                        # arbitrary fixed start time
+DEMO = "TDemoFraudHub" + "1" * 21               # 34 chars, the suspect wallet
+assert len(DEMO) == 34
+BASE_MS = 1787000000000
 B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
 def demo_addr(tag):
-    """Make a deterministic, valid-length (34-char) T-address for a fake party."""
     random.seed(tag)
     return "T" + "".join(random.choice(B58) for _ in range(33))
 
 
 def row(txid, frm, to, amount, ts_ms):
     return {
-        "txid": txid,
-        "queried_wallet": DEMO,
-        "from_address": frm,
-        "to_address": to,
-        "amount": float(amount),
-        "token": "USDT",
+        "txid": txid, "queried_wallet": DEMO,
+        "from_address": frm, "to_address": to,
+        "amount": float(amount), "token": "USDT",
         "timestamp_ms": ts_ms,
         "datetime_utc": datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).isoformat(),
-        "tx_type": "TriggerSmartContract",
-        "success": 1,
-        "raw_json": "{}",
+        "tx_type": "TriggerSmartContract", "success": 1, "raw_json": "{}",
     }
 
 
 def build_rows():
     rows = []
+    mule1, mule2 = demo_addr("mule-1"), demo_addr("mule-2")
 
-    # --- 25 senders pay INTO the demo wallet within ~50 minutes (hub + rapid-fire) ---
+    # 25 senders pay INTO the seed within ~50 min (hub + rapid-fire; #0 is the 1.2M whale)
     for i in range(25):
         sender = demo_addr(f"sender-{i}")
-        ts = BASE_MS + i * 120_000          # 2 minutes apart -> 25 in ~50 min
+        ts = BASE_MS + i * 120_000
         amount = 1_200_000 if i == 0 else random.randint(2_000, 40_000)
         rows.append(row(f"demo-in-{i}", sender, DEMO, amount, ts))
 
-    # --- the big 1.2M inflow arrived at BASE_MS (i==0). It LEAVES within 24h (layering) ---
-    big_out_ts = BASE_MS + 3_600_000        # 1 hour later (well within 24h)
-    rows.append(row("demo-out-big", DEMO, demo_addr("mule-0"), 1_150_000, big_out_ts))
+    # layering CHAIN the tracer will follow: seed -> mule1 -> mule2 -> exchange
+    t1, t2, t3 = BASE_MS + 3_600_000, BASE_MS + 7_200_000, BASE_MS + 10_800_000
+    rows.append(row("demo-chain-1", DEMO,  mule1, 1_150_000, t1))   # layering (in 24h)
+    rows.append(row("demo-chain-2", mule1, mule2, 1_100_000, t2))
+    rows.append(row("demo-chain-3", mule2, DEMO_EXCHANGE, 1_050_000, t3))  # -> cash-out
 
-    # --- 7 more outflows to different recipients (fan-out / distribution) ---
-    for i in range(7):
+    # a few smaller fan-out from the seed (distribution pattern)
+    for i in range(4):
         recip = demo_addr(f"recip-{i}")
-        ts = big_out_ts + (i + 1) * 300_000
-        rows.append(row(f"demo-out-{i}", DEMO, recip, random.randint(5_000, 60_000), ts))
-
+        rows.append(row(f"demo-out-{i}", DEMO, recip, random.randint(5_000, 60_000),
+                        t1 + (i + 1) * 300_000))
     return rows
 
 
 def main():
     conn = init_db()
-    # clear any previous demo rows so re-seeding is always a clean slate
+    # clean slate: remove old demo rows AND any cached result for these addresses
     conn.execute("DELETE FROM transactions WHERE txid LIKE 'demo-%'")
+    try:
+        conn.execute("DELETE FROM result_cache")   # table may not exist yet
+    except Exception:
+        pass
     conn.commit()
-    rows = build_rows()
-    added = save_transactions(conn, rows)
-    total = conn.execute(
-        "SELECT COUNT(*) FROM transactions WHERE queried_wallet = ?", (DEMO,)
-    ).fetchone()[0]
-    conn.close()
 
-    print(f"Seeded demo wallet: {DEMO}")
-    print(f"Inserted {added} new rows ({total} total for this wallet).")
-    print("Now analyze that address in the app — expect HIGH risk, HIGH confidence, RED card.")
+    added = save_transactions(conn, build_rows())
+    conn.close()
+    print(f"Seeded suspect wallet : {DEMO}")
+    print(f"Cash-out exchange     : {DEMO_EXCHANGE}")
+    print(f"Inserted {added} rows (chain: seed -> mule1 -> mule2 -> exchange).")
+    print("Analyze the suspect in the app -> HIGH risk, RED card, named destination.")
 
 
 if __name__ == "__main__":

@@ -52,6 +52,35 @@ def compute_threat(risk_score, confidence):
 
 
 # ---------------------------------------------------------------------------
+# ATTRIBUTION: naming WHERE traced money lands (the "cash-out" / exit point)
+# ---------------------------------------------------------------------------
+# A fixed demo exchange address so seed_demo can build a chain that ENDS somewhere
+# we can label. In production this list comes from a real labeled-address feed.
+DEMO_EXCHANGE = "TExchangeCashOut" + "1" * 18   # 34 chars
+
+# Known cash-out points. Extend with real exchange hot-wallet addresses.
+KNOWN_EXCHANGES = {
+    DEMO_EXCHANGE: "Demo Exchange (cash-out)",
+    # validated earlier: holds ~41M USDT + exchange-token balances
+    "TEPSrSYPDSQ7yXpMFPq91Fb1QEWpMkRGfn": "High-value custodial hub",
+}
+
+# A terminal node with at least this many distinct senders is *likely* an
+# exchange even if we don't have it in the list (exchanges have huge fan-in).
+EXCHANGE_FANIN_HINT = 20
+
+
+def classify_address(addr, fan_in):
+    """Return (kind, label) for a traced address.
+    kind = 'exchange' | 'likely_exchange' | 'wallet'."""
+    if addr in KNOWN_EXCHANGES:
+        return ("exchange", KNOWN_EXCHANGES[addr])
+    if fan_in >= EXCHANGE_FANIN_HINT:
+        return ("likely_exchange", "likely exchange / cash-out point")
+    return ("wallet", None)
+
+
+# ---------------------------------------------------------------------------
 # small helper: max number of transactions inside any sliding time window
 # ---------------------------------------------------------------------------
 def max_in_window(timestamps_ms, window_ms):

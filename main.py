@@ -19,6 +19,7 @@ Then open http://localhost:8000/docs  (auto-generated, interactive API tester)
 """
 
 import time
+import json
 import sqlite3
 
 from fastapi import FastAPI
@@ -56,8 +57,20 @@ def open_conn():
             analyzed_at  INTEGER
         )
     """)
+    # full-response cache so re-analyzing the same wallet (e.g. clicking a risk-map
+    # dot) is INSTANT instead of re-fetching every hop from TronGrid.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS result_cache (
+            address    TEXT PRIMARY KEY,
+            payload    TEXT,
+            cached_at  INTEGER
+        )
+    """)
     conn.commit()
     return conn
+
+
+CACHE_TTL_MS = 15 * 60 * 1000   # a cached analysis is reused for 15 minutes
 
 
 def valid_tron_address(addr):
@@ -95,23 +108,24 @@ def analyze(req: AnalyzeRequest):
         )
 
     conn = open_conn()
+    now = int(time.time() * 1000)
     try:
+        # FAST PATH: return a recent cached result instead of re-tracing live.
+        row = conn.execute(
+            "SELECT payload, cached_at FROM result_cache WHERE address = ?", (address,)
+        ).fetchone()
+        if row and now - row[1] < CACHE_TTL_MS:
+            return json.loads(row[0])
+
         # build_graph fetches live per hop + caches; if TronGrid is down it
-        # degrades gracefully to whatever is already cached.
-        graph = build_graph(conn, address)
+        # degrades gracefully to whatever is already cached. Now also returns
+        # 'destinations' — where the traced money lands (exit / cash-out points).
+        g = build_graph(conn, address)
 
         # analyze reads the (now freshly cached) data -> verdict incl. threat
         res = analyze_wallet(conn, address)
 
-        # record this analysis so the Risk Map (/api/history) can plot it
-        conn.execute(
-            "INSERT INTO analysis_history VALUES (?, ?, ?, ?, ?, ?)",
-            (address, res["risk_score"], res["risk_level"],
-             res["confidence"], res["threat"], int(time.time() * 1000)),
-        )
-        conn.commit()
-
-        return {
+        response = {
             "address": address,
             "risk_score": res["risk_score"],
             "risk_level": res["risk_level"],
@@ -120,8 +134,22 @@ def analyze(req: AnalyzeRequest):
             "threat": res["threat"],
             "reasons": res["reasons"],
             "stats": res["stats"],
-            "graph": graph,
+            "destinations": g["destinations"],
+            "graph": {"nodes": g["nodes"], "edges": g["edges"]},
         }
+
+        # record for the Risk Map, and cache the full response for fast re-clicks
+        conn.execute(
+            "INSERT INTO analysis_history VALUES (?, ?, ?, ?, ?, ?)",
+            (address, res["risk_score"], res["risk_level"],
+             res["confidence"], res["threat"], now),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO result_cache VALUES (?, ?, ?)",
+            (address, json.dumps(response), now),
+        )
+        conn.commit()
+        return response
     except Exception as e:
         return JSONResponse(
             status_code=500,

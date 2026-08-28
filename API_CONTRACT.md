@@ -63,10 +63,13 @@ Analyze one wallet: returns the verdict AND the trace graph for animation.
     "total_in": 0.0,
     "total_out": 380125.06
   },
+  "destinations": [
+    { "address": "TExchangeCashOut111111111111111111", "label": "TExcha…1111", "kind": "exchange", "note": "Demo Exchange (cash-out)", "received": 1050000.0, "hop": 3 }
+  ],
   "graph": {
     "nodes": [
-      { "id": "TNeorv8DUs4rX3oF4rCpcmBXJ95Pqm9umQ", "label": "TNeorv8…9umQ", "hop": 0, "is_seed": true,  "risk_level": "LOW",  "fan_in": 9 },
-      { "id": "TQwJnszBVfgKBoYvnxQvu8xiQuHZRD6sjc", "label": "TQwJns…6sjc", "hop": 1, "is_seed": false, "risk_level": "LOW",  "fan_in": 4 }
+      { "id": "TNeorv8DUs4rX3oF4rCpcmBXJ95Pqm9umQ", "label": "TNeorv8…9umQ", "hop": 0, "is_seed": true,  "risk_level": "LOW",  "fan_in": 9, "kind": "seed",   "note": null, "terminal": false },
+      { "id": "TQwJnszBVfgKBoYvnxQvu8xiQuHZRD6sjc", "label": "TQwJns…6sjc", "hop": 1, "is_seed": false, "risk_level": "LOW",  "fan_in": 4, "kind": "wallet", "note": null, "terminal": true }
     ],
     "edges": [
       { "from": "TNeorv8DUs4rX3oF4rCpcmBXJ95Pqm9umQ", "to": "TQwJnszBVfgKBoYvnxQvu8xiQuHZRD6sjc", "amount": 200000.0, "token": "USDT", "timestamp_ms": 1787851965000 }
@@ -81,6 +84,12 @@ Analyze one wallet: returns the verdict AND the trace graph for animation.
 - `threat`: **float 0.0–1.0** → drives the cyan→red theme blend (see "Theme mapping"
   below). This is the ONLY color-driving number; the backend never sends hex colors.
 - `reasons[]`: list, each `{points, text}` → render as bullet list ("why").
+- `destinations[]`: **where the traced money lands** (exit / cash-out points), ranked
+  exchanges-first then by amount. Each: `{address, label, kind, note, received, hop}`.
+  `kind` = `"exchange" | "likely_exchange" | "wallet"`; `note` is the human label
+  (e.g. "Demo Exchange (cash-out)") or null. Render as a panel; highlight exchanges.
+- `graph.nodes[].kind`: `"seed" | "exchange" | "likely_exchange" | "wallet"` → style the
+  node (seed highlighted, exchange gold ring). `terminal`: true if money stops there.
 - `graph.nodes[]`:
   - `id`: the address (unique key).
   - `label`: short display form (frontend may also shorten itself).
