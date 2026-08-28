@@ -38,7 +38,17 @@ MED_BAND, HIGH_BAND = 40, 70
 # confidence bands, based on how many transactions we actually have for the wallet
 CONF_MED_TX, CONF_HIGH_TX = 10, 30
 
+# how much each confidence level "commits" the theme toward red (see API_CONTRACT.md)
+CONF_WEIGHT = {"LOW": 0.5, "MEDIUM": 0.75, "HIGH": 1.0}
+
 DB_FILE = "tron_cache.db"
+
+
+def compute_threat(risk_score, confidence):
+    """Blend risk + confidence into a single 0.0-1.0 number that drives the
+    cyan->red theme. Confidence scales how far we commit toward red, so a
+    high-risk / low-confidence wallet stays orange, not full red."""
+    return round((risk_score / 100) * CONF_WEIGHT.get(confidence, 0.5), 2)
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +153,7 @@ def analyze_wallet(conn, wallet):
         "risk_level": level,
         "confidence": confidence,
         "confidence_reason": conf_reason,
+        "threat": compute_threat(score, confidence),
         "reasons": [{"points": p, "text": t} for p, t in reasons],
         "stats": {
             "tx_count": tx_count, "fan_in": fan_in, "fan_out": fan_out,

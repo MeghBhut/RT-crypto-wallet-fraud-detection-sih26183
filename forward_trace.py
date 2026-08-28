@@ -1,61 +1,61 @@
 """
-forward_trace.py  —  STEP 3 (second signal): FORWARD TRACE the money.
+forward_trace.py  —  FORWARD TRACE the money, and return it as a GRAPH.
 
-Follow funds FORWARD from a wallet, hop by hop, to see where they end up.
-Three "brakes" keep the trace tractable and meaningful:
-
+Follow funds forward from a wallet, hop by hop, applying three brakes:
   * HOP CAP        -> stop after N jumps (prevents exponential explosion)
   * VALUE THRESHOLD-> only follow transfers above X (ignores dust / noise)
   * TIME FILTER    -> at each hop, only follow money that left within a window
                       of when it arrived (laundering moves FAST)
+plus a BRANCH CAP (only the biggest few outflows per wallet).
 
-For each wallet we visit, we fetch its outgoing transactions LIVE from TronGrid
-and also cache them into tron_cache.db -- so the trace is real AND it grows our
-offline dataset as a side effect.
+The important function here is build_graph(), which returns:
+    { "nodes": [ {id,label,hop,is_seed,risk_level,fan_in}, ... ],
+      "edges": [ {from,to,amount,token,timestamp_ms}, ... ] }
+exactly the shape API_CONTRACT.md promises for the animated trace graph.
 
-Run it with:
-    python forward_trace.py                 # auto-picks the biggest sender in cache
-    python forward_trace.py TXyz...addr     # trace a wallet you choose
+For each wallet we visit we fetch its transactions LIVE from TronGrid and cache
+them into tron_cache.db -- so tracing is real AND grows our offline dataset.
+
+CLI:  python forward_trace.py [TWalletAddress]
 """
 
 import sys
 import sqlite3
 
-# On Windows the console defaults to cp1252 and chokes on fancy characters.
-# Force UTF-8 so our output prints safely on any machine.
+# reuse the tested Step-2 pieces (don't rewrite them)
+from cache_to_db import fetch_raw, clean_transaction, init_db, save_transactions, DB_FILE
+# the engine gives each node its risk_level + fan_in (read from cache, no fetch)
+from fraud_engine import analyze_wallet
+
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")   # Windows console safety
 except Exception:
     pass
 
-# Reuse the pieces we already built and tested in Step 2 (don't rewrite them):
-from cache_to_db import fetch_raw, clean_transaction, init_db, save_transactions, DB_FILE
-
-# ---- the three brakes (change these to see their effect) ----
-HOP_CAP = 2                 # how many jumps to follow
-VALUE_THRESHOLD = 100.0     # only follow transfers >= this many token units
-TIME_WINDOW_MS = 24 * 3600 * 1000   # 24 hours, in milliseconds
-BRANCH_CAP = 3              # at each wallet, follow at most this many (biggest) outflows
-
-# caches so we never fetch the same wallet twice in one run
-_fetched = set()
-_visited = set()
+# ---- the brakes (defaults; the API can override) ----
+HOP_CAP         = 2
+VALUE_THRESHOLD = 100.0
+TIME_WINDOW_MS  = 24 * 3600 * 1000
+BRANCH_CAP      = 3
 
 
-def get_outgoing(conn, wallet):
-    """Fetch + clean + cache a wallet's transactions, then return only the
-    OUTGOING ones (where this wallet is the sender)."""
-    if wallet not in _fetched:
-        _fetched.add(wallet)
+def shorten(addr):
+    """'TNeorv8DUs...9umQ' -> 'TNeorv..9umQ' for compact graph labels (ASCII-safe)."""
+    return addr if not addr or len(addr) <= 14 else f"{addr[:6]}..{addr[-4:]}"
+
+
+def get_outgoing(conn, wallet, fetched):
+    """Fetch+cache a wallet's transactions once, then return its OUTGOING transfers.
+    `fetched` is a per-trace set so we never hit the API twice for the same wallet."""
+    if wallet not in fetched:
+        fetched.add(wallet)
         try:
             raw = fetch_raw(wallet)
-        except Exception as e:
-            print(f"      (could not fetch {wallet[:10]}...: {e})")
-            return []
+        except Exception:
+            return []   # offline / rate-limited: fall back to whatever is cached
         cleaned = [c for tx in raw if (c := clean_transaction(tx, wallet)) is not None]
-        save_transactions(conn, cleaned)   # grow the offline cache as we go
+        save_transactions(conn, cleaned)
 
-    # read this wallet's outgoing transfers back out of the DB (offline-friendly)
     return conn.execute("""
         SELECT to_address, amount, token, timestamp_ms
         FROM transactions
@@ -63,47 +63,65 @@ def get_outgoing(conn, wallet):
     """, (wallet,)).fetchall()
 
 
-def trace(conn, wallet, hop, arrival_ms, indent):
-    """Recursively follow the money forward, applying the three brakes."""
-    if hop > HOP_CAP:                      # BRAKE 1: hop cap
-        return
-
+def build_graph(conn, seed,
+                hop_cap=HOP_CAP, value_threshold=VALUE_THRESHOLD,
+                time_window_ms=TIME_WINDOW_MS, branch_cap=BRANCH_CAP):
+    """Walk the money forward from `seed` and return {nodes, edges} per the contract."""
+    fetched = set()
+    hop_of = {seed: 0}          # address -> its hop distance from the seed
     edges = []
-    for to_addr, amount, token, ts in get_outgoing(conn, wallet):
-        if amount < VALUE_THRESHOLD:       # BRAKE 2: value threshold
+    queue = [(seed, 0, None)]   # (address, hop, when-money-arrived-here)
+    i = 0
+
+    while i < len(queue):       # breadth-first walk
+        addr, hop, arrival = queue[i]
+        i += 1
+        if hop >= hop_cap:                       # BRAKE 1: hop cap
             continue
-        if arrival_ms is not None:         # BRAKE 3: time filter (not at the root)
-            if not (arrival_ms <= ts <= arrival_ms + TIME_WINDOW_MS):
+
+        candidates = []
+        for to_addr, amount, token, ts in get_outgoing(conn, addr, fetched):
+            if amount < value_threshold:         # BRAKE 2: value threshold
                 continue
-        edges.append((to_addr, amount, token, ts))
+            if arrival is not None and not (arrival <= ts <= arrival + time_window_ms):
+                continue                         # BRAKE 3: time filter (not at root)
+            candidates.append((to_addr, amount, token, ts))
 
-    # follow only the biggest few outflows (another practical brake on explosion)
-    edges.sort(key=lambda e: e[1], reverse=True)
-    edges = edges[:BRANCH_CAP]
+        candidates.sort(key=lambda e: e[1], reverse=True)
+        for to_addr, amount, token, ts in candidates[:branch_cap]:   # BRAKE 4: branch cap
+            edges.append({
+                "from": addr, "to": to_addr,
+                "amount": round(amount, 2), "token": token, "timestamp_ms": ts,
+            })
+            if to_addr not in hop_of:            # new node -> explore it later
+                hop_of[to_addr] = hop + 1
+                queue.append((to_addr, hop + 1, ts))
+            # if already seen, we still keep the edge (shows convergence/loops)
 
-    pad = "    " * indent
-    if not edges:
-        print(f"{pad}(no further qualifying outflows)")
-        return
+    # turn every discovered address into a node, enriched by the fraud engine
+    nodes = []
+    for addr, hop in hop_of.items():
+        res = analyze_wallet(conn, addr)         # reads cache only, no API
+        nodes.append({
+            "id": addr,
+            "label": shorten(addr),
+            "hop": hop,
+            "is_seed": addr == seed,
+            "risk_level": res["risk_level"],
+            "fan_in": res["stats"]["fan_in"],
+        })
 
-    for to_addr, amount, token, ts in edges:
-        print(f"{pad}|- {amount:,.2f} {token}  ->  {to_addr}")
-        if to_addr in _visited:
-            print(f"{pad}     (already visited — stopping to avoid a loop)")
-            continue
-        _visited.add(to_addr)
-        trace(conn, to_addr, hop + 1, ts, indent + 1)
+    return {"nodes": nodes, "edges": edges}
 
 
+# ---------------------------------------------------------------------------
+# CLI: print the graph so you can eyeball it without the web layer
+# ---------------------------------------------------------------------------
 def pick_default_seed(conn):
-    """If the user didn't pass an address, start from the biggest sender we have."""
     row = conn.execute("""
-        SELECT from_address, SUM(amount) AS sent
-        FROM transactions
+        SELECT from_address, SUM(amount) s FROM transactions
         WHERE from_address IS NOT NULL AND success = 1
-        GROUP BY from_address
-        ORDER BY sent DESC
-        LIMIT 1
+        GROUP BY from_address ORDER BY s DESC LIMIT 1
     """).fetchone()
     return row[0] if row else None
 
@@ -112,22 +130,18 @@ def main():
     conn = init_db()
     seed = sys.argv[1] if len(sys.argv) > 1 else pick_default_seed(conn)
     if not seed:
-        print("No seed address available. Run cache_to_db.py first.")
+        print("No seed available. Run cache_to_db.py first.")
         return
 
-    print("=== FORWARD TRACE ===")
-    print(f"Seed wallet     : {seed}")
-    print(f"Hop cap         : {HOP_CAP} hops")
-    print(f"Value threshold : >= {VALUE_THRESHOLD} token units")
-    print(f"Time window     : {TIME_WINDOW_MS // 3600000}h after money arrives")
-    print(f"Branch cap      : {BRANCH_CAP} biggest outflows per wallet\n")
-
-    _visited.add(seed)
-    print(f"[hop 0] {seed}")
-    trace(conn, seed, hop=0, arrival_ms=None, indent=1)
-
-    print(f"\nWallets visited in this trace: {len(_visited)}")
-    print(f"tron_cache.db now enriched with every wallet we fetched.")
+    g = build_graph(conn, seed)
+    print(f"=== TRACE GRAPH for {seed} ===")
+    print(f"nodes: {len(g['nodes'])} | edges: {len(g['edges'])}\n")
+    for n in sorted(g["nodes"], key=lambda x: x["hop"]):
+        seed_mark = " (SEED)" if n["is_seed"] else ""
+        print(f"  hop {n['hop']} | {n['risk_level']:>6} | fan-in {n['fan_in']:>2} | {n['id']}{seed_mark}")
+    print()
+    for e in g["edges"]:
+        print(f"  {e['from']}  ->  {e['to']}   {e['amount']:,.2f} {e['token']}")
     conn.close()
 
 
